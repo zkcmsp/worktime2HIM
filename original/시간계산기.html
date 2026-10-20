@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>WorkTime Tracker - 2026 Edition</title>
+    <style>
+        :root { 
+            --primary: #2563eb; --bg: #f8fafc; --success: #22c55e; 
+            --warning: #f59e0b; --danger: #ef4444; --gray: #e2e8f0; 
+            --today-bg: #eff6ff; 
+        }
+        body { font-family: -apple-system, "Malgun Gothic", sans-serif; background: var(--bg); padding: 20px; display: flex; justify-content: center; }
+        .card { background: white; padding: 2rem; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); width: 100%; max-width: 850px; }
+        h2 { color: #1e293b; border-bottom: 2px solid var(--primary); padding-bottom: 12px; margin: 0 0 20px 0; display: flex; justify-content: space-between; align-items: center;}
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; table-layout: fixed; }
+        th, td { padding: 14px; border-bottom: 1px solid #f1f5f9; text-align: center; }
+        th { background: #f8fafc; color: #64748b; font-weight: 600; font-size: 0.9rem; }
+        .today-row { background-color: var(--today-bg); outline: 2px solid var(--primary); }
+        .today-badge { background: var(--primary); color: white; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-left: 5px; vertical-align: middle; }
+        .date-label { font-size: 0.8rem; color: #64748b; display: block; margin-bottom: 2px; }
+        .day-label { font-size: 1rem; font-weight: bold; }
+        select { padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; cursor: pointer; width: 90%; }
+        .progress-section { margin-top: 30px; }
+        .progress-label { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: bold; color: #334155; }
+        .progress-container { width: 100%; height: 16px; background: var(--gray); border-radius: 10px; overflow: hidden; }
+        #progressBar { height: 100%; width: 0%; background: var(--primary); transition: width 0.4s ease; }
+        .summary-box { 
+            margin-top: 20px; padding: 20px; border-radius: 12px; background: #f1f5f9;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 15px;
+        }
+        .status-text { font-size: 1.1rem; font-weight: bold; }
+        .over-text { color: var(--danger); }
+        .hint { grid-column: span 2; font-size: 0.85rem; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 10px; margin-top: 5px; line-height: 1.6; }
+        .sync-status { font-size: 0.7rem; color: #64748b; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>
+        주간 근무시간 계산기 (2026)
+        <span id="syncStatus" class="sync-status">시간 로드 중...</span>
+    </h2>
+    
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25%;">날짜 및 요일</th>
+                <th style="width: 15%;">구분</th>
+                <th style="width: 20%;">출근</th>
+                <th style="width: 20%;">퇴근</th>
+                <th style="width: 20%;">실제 근무</th>
+            </tr>
+        </thead>
+        <tbody id="workTable"></tbody>
+    </table>
+
+    <div class="progress-section">
+        <div class="progress-label">
+            <span>주간 목표 달성률 (40h 기준)</span>
+            <span id="progressPercent">0%</span>
+        </div>
+        <div class="progress-container">
+            <div id="progressBar"></div>
+        </div>
+    </div>
+
+    <div class="summary-box">
+        <div class="status-text">총 근무: <span id="totalHoursText">0</span>h</div>
+        <div class="status-text" style="text-align: right;" id="overtimeDisplay">초과: 0h</div>
+        <div class="hint">
+            • <b>오늘 강조:</b> <span id="todayIndicator"></span> (수요일) 행이 강조됩니다.<br>
+            • <b>시간 규정:</b> 출근 12시 이전, 퇴근 13시 이후인 경우 점심시간 1시간이 자동 공제됩니다.
+        </div>
+    </div>
+</div>
+
+<script>
+    const dayNames = ['월', '화', '수', '목', '금'];
+    const startOptions = [8, 9, 10, 11];
+    // 퇴근 시간 범위를 14:00부터 시작하도록 조정
+    const endOptions = [14, 15, 16, 17, 18, 19, 20];
+
+    let todayStr, weekDates, workData;
+
+    async function init() {
+        let now = new Date();
+        try {
+            const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Seoul');
+            const data = await res.json();
+            now = new Date(data.datetime);
+            document.getElementById('syncStatus').innerText = "● 웹 시간 동기화됨";
+        } catch (e) {
+            document.getElementById('syncStatus').innerText = "○ 시스템 시간 사용 중";
+        }
+
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        todayStr = `${y}-${m}-${d}`;
+        document.getElementById('todayIndicator').innerText = todayStr;
+
+        const currentDay = now.getDay(); 
+        const diffToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + diffToMonday);
+
+        weekDates = dayNames.map((name, i) => {
+            const target = new Date(monday);
+            target.setDate(monday.getDate() + i);
+            const ty = target.getFullYear();
+            const tm = String(target.getMonth() + 1).padStart(2, '0');
+            const td = String(target.getDate()).padStart(2, '0');
+            return {
+                full: `${ty}.${parseInt(tm)}.${parseInt(td)}`,
+                compare: `${ty}-${tm}-${td}`,
+                name: name
+            };
+        });
+
+        const weekKey = `workWeek_${weekDates[0].compare}`;
+        workData = JSON.parse(localStorage.getItem(weekKey)) || 
+                   dayNames.map(day => ({ day, type: 'normal', start: 9, end: 18 }));
+
+        render(weekKey);
+    }
+
+    function render(weekKey) {
+        const tbody = document.getElementById('workTable');
+        tbody.innerHTML = '';
+        let total = 0;
+
+        workData.forEach((item, index) => {
+            const isNormal = item.type === 'normal';
+            // 시간 계산 로직 (점심시간 공제 포함)
+            const h = isNormal ? Math.max(0, (item.end - item.start) - (item.start < 13 && item.end > 12 ? 1 : 0)) : 8;
+            total += h;
+
+            const dateInfo = weekDates[index];
+            const isToday = dateInfo.compare === todayStr;
+
+            const tr = document.createElement('tr');
+            if (isToday) tr.className = 'today-row';
+
+            tr.innerHTML = `
+                <td>
+                    <span class="date-label">${dateInfo.full}</span>
+                    <span class="day-label">${dateInfo.name}요일${isToday ? '<span class="today-badge">TODAY</span>' : ''}</span>
+                </td>
+                <td>
+                    <select onchange="update(${index}, 'type', this.value, '${weekKey}')">
+                        <option value="normal" ${item.type === 'normal' ? 'selected' : ''}>정상</option>
+                        <option value="leave" ${item.type === 'leave' ? 'selected' : ''}>연차</option>
+                    </select>
+                </td>
+                <td>
+                    <select onchange="update(${index}, 'start', this.value, '${weekKey}')" ${!isNormal ? 'disabled' : ''}>
+                        ${startOptions.map(o => `<option value="${o}" ${item.start == o ? 'selected' : ''}>${o}:00</option>`).join('')}
+                    </select>
+                </td>
+                <td>
+                    <select onchange="update(${index}, 'end', this.value, '${weekKey}')" ${!isNormal ? 'disabled' : ''}>
+                        ${endOptions.map(o => `<option value="${o}" ${item.end == o ? 'selected' : ''}>${o}:00</option>`).join('')}
+                    </select>
+                </td>
+                <td><span style="font-weight:600">${h}h</span></td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        const percent = Math.min(100, (total / 40) * 100);
+        document.getElementById('totalHoursText').innerText = total;
+        document.getElementById('overtimeDisplay').innerHTML = total > 40 ? `초과: <span class="over-text">+${total-40}h</span>` : `초과: 0h`;
+        document.getElementById('progressBar').style.width = percent + '%';
+        document.getElementById('progressBar').style.backgroundColor = total > 40 ? 'var(--danger)' : 'var(--primary)';
+        document.getElementById('progressPercent').innerText = Math.floor(percent) + '%';
+        
+        localStorage.setItem(weekKey, JSON.stringify(workData));
+    }
+
+    window.update = (i, f, v, k) => {
+        workData[i][f] = f === 'type' ? v : parseInt(v);
+        render(k);
+    };
+
+    init();
+</script>
+</body>
+</html>

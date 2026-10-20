@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>근무시간</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="근무시간">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icon-180.png">
+    <style>
+        :root {
+            --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b;
+            --line: #e2e8f0; --field: #f1f5f9; --danger: #ef4444; --today-bg: #eff6ff;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --primary: #3b82f6; --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --muted: #94a3b8;
+                --line: #334155; --field: #0f172a; --danger: #f87171; --today-bg: #1e3a8a55;
+            }
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { margin: 0; background: var(--bg); color: var(--text); }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+            padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 12px);
+            max-width: 560px; margin: 0 auto;
+            /* 한 화면에 꽉 차게: 남는 높이는 요일 줄들이 나눠 가짐 */
+            min-height: 100vh; min-height: 100dvh;
+            display: flex; flex-direction: column; gap: 12px;
+        }
+        header { display: flex; justify-content: space-between; align-items: baseline; }
+        h1 { font-size: 1.35rem; margin: 0; }
+        .week-range { font-size: 0.85rem; color: var(--muted); margin-left: 8px; font-weight: 500; }
+        .sync-status { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
+
+        .summary { background: var(--card); border-radius: 16px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+        .summary-top { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
+        .total { font-size: 1.9rem; font-weight: 700; line-height: 1; }
+        .total small { font-size: 0.95rem; color: var(--muted); font-weight: 500; }
+        .over { text-align: right; font-weight: 600; font-size: 0.9rem; line-height: 1.4; }
+        .over .percent { display: block; font-size: 0.75rem; color: var(--muted); font-weight: 500; }
+        .over-text { color: var(--danger); }
+        .progress-container { width: 100%; height: 8px; background: var(--line); border-radius: 8px; overflow: hidden; }
+        #progressBar { height: 100%; width: 0%; background: var(--primary); transition: width 0.4s ease; }
+
+        .week { flex: 1; display: flex; flex-direction: column; gap: 0.4rem; }
+        .grid { display: grid; grid-template-columns: 2.9rem 1fr 1fr 1fr 2.6rem; gap: 0.4rem; align-items: center; }
+        .col-head { font-size: 0.7rem; color: var(--muted); text-align: center; padding: 0 calc(0.5rem + 2px); /* 아래 줄의 테두리+여백과 맞춤 */ }
+        .day {
+            flex: 1; min-height: 3.5rem;
+            background: var(--card); border-radius: 0.9rem; padding: 0 0.5rem; border: 2px solid transparent;
+        }
+        .day.today { background: var(--today-bg); border-color: var(--primary); }
+        .day-name { text-align: center; line-height: 1.15; }
+        .day-name b { display: inline-flex; width: 1.9rem; height: 1.9rem; align-items: center; justify-content: center; border-radius: 50%; font-size: 1rem; }
+        .today .day-name b { background: var(--primary); color: #fff; }
+        .day-name span { display: block; font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+        .hours { font-size: 1.05rem; font-weight: 700; text-align: right; }
+        select {
+            width: 100%; min-width: 0; font-size: 1rem; /* 16px 미만이면 iOS가 확대함 */
+            padding: 0.85rem 2px; border-radius: 0.65rem; border: 1px solid var(--line);
+            background: var(--field); color: var(--text); -webkit-appearance: none; appearance: none;
+            text-align: center; text-align-last: center;
+        }
+        select:disabled { opacity: 0.35; }
+
+        .hint { font-size: 0.72rem; color: var(--muted); line-height: 1.5; margin: 0; padding: 0 4px; }
+
+        /* 대상 기기: iPhone 15 Pro Max(430px) / iPad Pro 12.9 5세대(1024~1366px). 아이패드는 전체를 키움 */
+        @media (min-width: 768px) {
+            html { font-size: 24px; }
+            body { max-width: 1000px; padding-left: 32px; padding-right: 32px; gap: 18px; }
+            .summary { padding: 1rem 1.2rem; }
+            .total { font-size: 2.4rem; }
+            select { padding: 0.9rem 2px; }
+            .day-name b { width: 2.3rem; height: 2.3rem; font-size: 1.15rem; }
+            .hours { font-size: 1.25rem; }
+            .grid { grid-template-columns: 3.4rem 1fr 1fr 1fr 3rem; gap: 0.6rem; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div><h1 style="display:inline">주간 근무시간</h1><span class="week-range" id="weekRange"></span></div>
+    <span id="syncStatus" class="sync-status">시간 로드 중...</span>
+</header>
+
+<section class="summary">
+    <div class="summary-top">
+        <div class="total"><span id="totalHoursText">0</span><small>h / 40h</small></div>
+        <div class="over"><span id="overtimeDisplay">초과 0h</span><span class="percent">달성률 <span id="progressPercent">0%</span></span></div>
+    </div>
+    <div class="progress-container"><div id="progressBar"></div></div>
+</section>
+
+<main class="week">
+    <div class="grid col-head"><span></span><span>구분</span><span>출근</span><span>퇴근</span><span style="text-align:right">근무</span></div>
+    <div id="workList" style="display:contents"></div>
+</main>
+
+<p class="hint">
+    점심 1시간 자동 공제: 12시 이전 출근 · 13시 이후 퇴근<br>
+    연차는 8시간 · 기록은 이 기기에만 저장됩니다.
+</p>
+
+<script>
+    const dayNames = ['월', '화', '수', '목', '금'];
+    const startOptions = [8, 9, 10, 11];
+    const endOptions = [14, 15, 16, 17, 18, 19, 20];
+
+    let todayStr, weekDates, workData, weekKey;
+
+    async function getNow() {
+        try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 3000);
+            const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Seoul', { signal: ctrl.signal, cache: 'no-store' });
+            clearTimeout(timer);
+            const data = await res.json();
+            document.getElementById('syncStatus').innerText = '● 웹 시간 동기화됨';
+            return new Date(data.datetime);
+        } catch (e) {
+            document.getElementById('syncStatus').innerText = '○ 기기 시간 사용 중';
+            return new Date();
+        }
+    }
+
+    const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+
+    async function init() {
+        const now = await getNow();
+        todayStr = ymd(now);
+
+        const currentDay = now.getDay();
+        const diffToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + diffToMonday);
+
+        weekDates = dayNames.map((name, i) => {
+            const target = new Date(monday);
+            target.setDate(monday.getDate() + i);
+            return {
+                full: `${target.getMonth() + 1}.${target.getDate()}`,
+                compare: ymd(target),
+                name
+            };
+        });
+        document.getElementById('weekRange').innerText = `${weekDates[0].full} – ${weekDates[4].full}`;
+
+        weekKey = `workWeek_${weekDates[0].compare}`;
+        try { workData = JSON.parse(localStorage.getItem(weekKey)); } catch (e) { workData = null; }
+        workData = workData || dayNames.map(day => ({ day, type: 'normal', start: 9, end: 18 }));
+
+        render();
+    }
+
+    function hoursOf(item) {
+        if (item.type !== 'normal') return 8;
+        return Math.max(0, (item.end - item.start) - (item.start < 13 && item.end > 12 ? 1 : 0));
+    }
+
+    function options(list, current) {
+        return list.map(o => `<option value="${o}" ${current == o ? 'selected' : ''}>${o}:00</option>`).join('');
+    }
+
+    function render() {
+        const list = document.getElementById('workList');
+        list.innerHTML = '';
+        let total = 0;
+
+        workData.forEach((item, index) => {
+            const isNormal = item.type === 'normal';
+            const h = hoursOf(item);
+            total += h;
+
+            const dateInfo = weekDates[index];
+            const isToday = dateInfo.compare === todayStr;
+
+            const row = document.createElement('div');
+            row.className = 'grid day' + (isToday ? ' today' : '');
+            row.innerHTML = `
+                <div class="day-name"><b>${dateInfo.name}</b><span>${dateInfo.full}</span></div>
+                <select data-f="type" aria-label="${dateInfo.name}요일 구분">
+                    <option value="normal" ${isNormal ? 'selected' : ''}>정상</option>
+                    <option value="leave" ${!isNormal ? 'selected' : ''}>연차</option>
+                </select>
+                <select data-f="start" aria-label="${dateInfo.name}요일 출근" ${!isNormal ? 'disabled' : ''}>${options(startOptions, item.start)}</select>
+                <select data-f="end" aria-label="${dateInfo.name}요일 퇴근" ${!isNormal ? 'disabled' : ''}>${options(endOptions, item.end)}</select>
+                <div class="hours">${h}h</div>`;
+            row.querySelectorAll('select').forEach(sel => {
+                sel.addEventListener('change', () => {
+                    const f = sel.dataset.f;
+                    workData[index][f] = f === 'type' ? sel.value : parseInt(sel.value);
+                    render();
+                });
+            });
+            list.appendChild(row);
+        });
+
+        const percent = Math.min(100, (total / 40) * 100);
+        document.getElementById('totalHoursText').innerText = total;
+        document.getElementById('overtimeDisplay').innerHTML = total > 40 ? `초과 <span class="over-text">+${total - 40}h</span>` : '초과 0h';
+        document.getElementById('progressBar').style.width = percent + '%';
+        document.getElementById('progressBar').style.backgroundColor = total > 40 ? 'var(--danger)' : 'var(--primary)';
+        document.getElementById('progressPercent').innerText = Math.floor(percent) + '%';
+
+        try { localStorage.setItem(weekKey, JSON.stringify(workData)); } catch (e) {}
+    }
+
+    // 앱이 백그라운드에서 돌아왔을 때 날짜가 바뀌었으면 새로 그림
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && todayStr && ymd(new Date()) !== todayStr) init();
+    });
+
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+    init();
+</script>
+</body>
+</html>
