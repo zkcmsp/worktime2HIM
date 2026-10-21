@@ -20,3 +20,4 @@
 | `sw.js` | 오프라인 실행용 캐시 |
 | `original/시간계산기.html` | 처음 만든 PC용 원본 |
 | `screenshots/` | 화면 변경 전/후 비교 이미지 |
+| `CLAUDE.md` | Claude Code 작업 안내 (대상 기기, 계산 규칙, 작업 방식) |
