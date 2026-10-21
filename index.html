@@ -16,11 +16,13 @@
         :root {
             --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b;
             --line: #e2e8f0; --field: #f1f5f9; --danger: #ef4444; --today-bg: #eff6ff;
+            --short-bg: #fee2e2; --short-text: #b91c1c;
         }
         @media (prefers-color-scheme: dark) {
             :root {
                 --primary: #3b82f6; --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --muted: #94a3b8;
                 --line: #334155; --field: #0f172a; --danger: #f87171; --today-bg: #1e3a8a55;
+                --short-bg: #7f1d1d; --short-text: #fecaca;
             }
         }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -36,7 +38,6 @@
         header { display: flex; justify-content: space-between; align-items: baseline; }
         h1 { font-size: 1.35rem; margin: 0; }
         .week-range { font-size: 0.85rem; color: var(--muted); margin-left: 8px; font-weight: 500; }
-        .sync-status { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
 
         .summary { background: var(--card); border-radius: 16px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
         .summary-top { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
@@ -68,6 +69,8 @@
             text-align: center; text-align-last: center;
         }
         select:disabled { opacity: 0.35; }
+        select.short { background: var(--short-bg); border-color: var(--danger); color: var(--short-text); font-weight: 700; }
+        .short-word { color: var(--danger); }
 
         .hint { font-size: 0.72rem; color: var(--muted); line-height: 1.5; margin: 0; padding: 0 4px; }
 
@@ -88,7 +91,6 @@
 
 <header>
     <div><h1 style="display:inline">주간 근무시간</h1><span class="week-range" id="weekRange"></span></div>
-    <span id="syncStatus" class="sync-status">시간 로드 중...</span>
 </header>
 
 <section class="summary">
@@ -106,7 +108,8 @@
 
 <p class="hint">
     점심 1시간 자동 공제: 12시 이전 출근 · 13시 이후 퇴근<br>
-    연차는 8시간 · 기록은 이 기기에만 저장됩니다.
+    마지막 근무일 퇴근 칸이 <b class="short-word">빨간색</b>이면 40시간에 모자랍니다<br>
+    연차/휴일은 8시간 · 기록은 이 기기에만 저장됩니다.
 </p>
 
 <script>
@@ -116,25 +119,10 @@
 
     let todayStr, weekDates, workData, weekKey;
 
-    async function getNow() {
-        try {
-            const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 3000);
-            const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Seoul', { signal: ctrl.signal, cache: 'no-store' });
-            clearTimeout(timer);
-            const data = await res.json();
-            document.getElementById('syncStatus').innerText = '● 웹 시간 동기화됨';
-            return new Date(data.datetime);
-        } catch (e) {
-            document.getElementById('syncStatus').innerText = '○ 기기 시간 사용 중';
-            return new Date();
-        }
-    }
-
     const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 
-    async function init() {
-        const now = await getNow();
+    function init() {
+        const now = new Date();
         todayStr = ymd(now);
 
         const currentDay = now.getDay();
@@ -172,12 +160,14 @@
     function render() {
         const list = document.getElementById('workList');
         list.innerHTML = '';
-        let total = 0;
+        const total = workData.reduce((sum, item) => sum + hoursOf(item), 0);
+        // 그 주의 마지막 정상 근무일만 40시간 부족 여부를 표시 (앞의 날은 아직 뒤에 만회할 날이 남아 있음)
+        const lastWorkday = workData.map(item => item.type).lastIndexOf('normal');
 
         workData.forEach((item, index) => {
             const isNormal = item.type === 'normal';
             const h = hoursOf(item);
-            total += h;
+            const isShort = index === lastWorkday && total < 40;
 
             const dateInfo = weekDates[index];
             const isToday = dateInfo.compare === todayStr;
@@ -188,10 +178,10 @@
                 <div class="day-name"><b>${dateInfo.name}</b><span>${dateInfo.full}</span></div>
                 <select data-f="type" aria-label="${dateInfo.name}요일 구분">
                     <option value="normal" ${isNormal ? 'selected' : ''}>정상</option>
-                    <option value="leave" ${!isNormal ? 'selected' : ''}>연차</option>
+                    <option value="leave" ${!isNormal ? 'selected' : ''}>연차/휴일</option>
                 </select>
                 <select data-f="start" aria-label="${dateInfo.name}요일 출근" ${!isNormal ? 'disabled' : ''}>${options(startOptions, item.start)}</select>
-                <select data-f="end" aria-label="${dateInfo.name}요일 퇴근" ${!isNormal ? 'disabled' : ''}>${options(endOptions, item.end)}</select>
+                <select data-f="end" class="${isShort ? 'short' : ''}" aria-label="${dateInfo.name}요일 퇴근${isShort ? ` (40시간까지 ${40 - total}시간 부족)` : ''}" ${!isNormal ? 'disabled' : ''}>${options(endOptions, item.end)}</select>
                 <div class="hours">${h}h</div>`;
             row.querySelectorAll('select').forEach(sel => {
                 sel.addEventListener('change', () => {
